@@ -1,0 +1,116 @@
+/* 性能优化 */
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+/* Typewriter 样式 */
+.typewriter-wrapper {
+  display: inline;
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* 只显示活动行的光标 */
+.typewriter-wrapper .Typewriter__cursor {
+  display: none;
+}
+
+.typewriter-wrapper.active .Typewriter__cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background-color: #10a37f;
+  margin-left: 2px;
+  animation: blink 1s step-end infinite;
+  vertical-align: middle;
+  opacity: 0.8;
+  position: relative;
+  top: -1px;
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+@keyframes blink {
+  0%, 100% {
+    opacity: 0.8;
+    transform: translateZ(0);
+  }
+  50% {
+    opacity: 0;
+    transform: translateZ(0);
+  }
+}
+
+/* 优化文字显示动画 */
+.Typewriter__wrapper {
+  display: inline;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: contents;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* 优化滚动容器 */
+.scroll-container {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  will-change: scroll-position;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* 优化滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: background-color;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+/* 全局样式 */
+html {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  overflow: hidden;
+  contain: paint;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+} 

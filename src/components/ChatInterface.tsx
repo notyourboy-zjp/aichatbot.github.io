@@ -4,6 +4,7 @@ import SendIcon from '@mui/icons-material/Send';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
+import Typewriter from 'typewriter-effect';
 import { sendMessage } from '../services/api';
 
 // 消息类型定义
@@ -32,44 +33,6 @@ const scrollbarStyle = {
   },
 };
 
-/**
- * 计算打字机效果的延迟时间
- * @param totalLength - 总文本长度
- * @param currentLength - 当前已显示的文本长度
- * @returns 延迟时间（毫秒）
- */
-const calculateTypingDelay = (totalLength: number, currentLength: number): number => {
-  // 增加基础延迟时间
-  const baseDelay = 20;
-  
-  // 调整速度因子，使变化更平缓
-  let lengthFactor = 1;
-  if (totalLength > 1000) {
-    lengthFactor = 0.85; // 长文本适度加快
-  } else if (totalLength > 500) {
-    lengthFactor = 0.9; // 中等文本轻微加快
-  } else if (totalLength > 100) {
-    lengthFactor = 0.95; // 较短文本几乎保持原速
-  }
-
-  // 调整进度因子，使速度变化更平滑
-  const progress = currentLength / totalLength;
-  let progressFactor = 1;
-  
-  if (progress < 0.1) {
-    progressFactor = 0.9; // 开始时略快
-  } else if (progress < 0.2) {
-    progressFactor = 0.95; // 前期保持较快
-  } else if (progress > 0.95) {
-    progressFactor = 1.05; // 结尾轻微减速
-  }
-
-  // 保持较小的随机变化
-  const randomFactor = 0.98 + Math.random() * 0.04; // 0.98-1.02 之间的随机值
-
-  return Math.round(baseDelay * lengthFactor * progressFactor * randomFactor);
-};
-
 // 组件属性类型定义
 interface ChatInterfaceProps {
   className?: string;
@@ -84,121 +47,57 @@ export default function ChatInterface({ className }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [currentResponse, setCurrentResponse] = useState('');
   const [displayedResponse, setDisplayedResponse] = useState('');
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isStreamingRef = useRef(false);
-  const typewriterTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  /**
-   * 打字机效果的实现
-   * 通过计算延迟时间和字符显示数量来模拟真实打字效果
-   */
-  useEffect(() => {
-    if (currentResponse && isStreamingRef.current) {
-      const textToType = currentResponse.slice(displayedResponse.length);
-      if (textToType) {
-        if (typewriterTimeoutRef.current) {
-          clearTimeout(typewriterTimeoutRef.current);
-        }
-
-        // 计算要一次性添加的字符数
-        let charsToAdd = 1;
-        const nextChar = textToType.charAt(0);
-        const followingChar = textToType.charAt(1);
-        
-        // 优化显示逻辑
-        if (/[.,!?，。！？、:：""''（）()]/.test(nextChar)) {
-          // 标点符号单独显示
-          charsToAdd = 1;
-        } else if (/[\u4e00-\u9fa5]/.test(nextChar)) {
-          // 中文字符显示逻辑优化
-          const match = textToType.match(/^[\u4e00-\u9fa5]+/);
-          if (match) {
-            const phraseLength = match[0].length;
-            if (phraseLength <= 2) {
-              charsToAdd = phraseLength; // 短词组整体显示
-            } else {
-              charsToAdd = 1; // 长词组逐字显示
-            }
-          }
-        } else if (/[a-zA-Z]/.test(nextChar)) {
-          // 英文单词显示逻辑优化
-          const match = textToType.match(/^[a-zA-Z]+(?=[^a-zA-Z]|$)/);
-          if (match) {
-            const wordLength = match[0].length;
-            if (wordLength <= 4) {
-              charsToAdd = wordLength; // 短单词整体显示
-            } else {
-              charsToAdd = 3; // 长单词分段显示
-            }
-          }
-        } else if (nextChar === ' ' && /[a-zA-Z]/.test(followingChar)) {
-          // 空格处理
-          charsToAdd = 1;
-        }
-
-        const delay = calculateTypingDelay(
-          currentResponse.length,
-          displayedResponse.length
-        );
-
-        // 调整标点符号停顿时间
-        const punctuationDelay = /[.。!！?？]$/.test(displayedResponse) ? 250 : // 句号停顿加长
-                                /[,，、]$/.test(displayedResponse) ? 120 : // 逗号停顿适中
-                                /[:：]$/.test(displayedResponse) ? 180 : // 冒号停顿适中
-                                /["""'']$/.test(displayedResponse) ? 80 : // 引号停顿短促
-                                0;
-
-        // 段落停顿时间
-        const paragraphDelay = /\n\s*\n$/.test(displayedResponse) ? 350 : 0;
-
-        typewriterTimeoutRef.current = setTimeout(() => {
-          setDisplayedResponse(prev => prev + textToType.slice(0, charsToAdd));
-        }, delay + punctuationDelay + paragraphDelay);
-      }
-    } else if (!isStreamingRef.current) {
-      setDisplayedResponse('');
-    }
-
-    return () => {
-      if (typewriterTimeoutRef.current) {
-        clearTimeout(typewriterTimeoutRef.current);
-      }
-    };
-  }, [currentResponse, displayedResponse]);
-
-  /**
-   * 滚动到底部的处理函数
-   * @param force - 是否强制滚动，不考虑当前滚动位置
-   */
+  // 滚动到底部
   const scrollToBottom = useCallback((force = false) => {
     if (messagesEndRef.current) {
       const element = messagesEndRef.current;
       const parent = element.parentElement;
       if (parent) {
-        const isAtBottom = parent.scrollHeight - parent.scrollTop <= parent.clientHeight + 100;
-        if (isAtBottom || force) {
-          setTimeout(() => {
-            element.scrollIntoView({ behavior: force ? 'auto' : 'smooth' });
-          }, 50);
-        }
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (force) {
+              parent.scrollTop = parent.scrollHeight;
+            } else {
+              try {
+                parent.scrollTo({
+                  top: parent.scrollHeight,
+                  behavior: 'smooth'
+                });
+              } catch {
+                parent.scrollTop = parent.scrollHeight;
+              }
+            }
+          });
+        });
       }
     }
   }, []);
 
-  /**
-   * 监听消息变化，自动滚动到底部
-   */
+  // 处理流式响应
+  const handleProgress: OnProgressCallback = useCallback((content: string) => {
+    if (isStreamingRef.current) {
+      setDisplayedResponse(prev => {
+        const newResponse = prev + content;
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => scrollToBottom(false));
+        });
+        return newResponse;
+      });
+    }
+  }, [scrollToBottom]);
+
+  // 监听消息变化，自动滚动
   useEffect(() => {
     scrollToBottom(false);
   }, [messages, displayedResponse, scrollToBottom]);
 
-  /**
-   * 发送消息的处理函数
-   * 处理消息发送、流式响应和错误处理
-   */
+  // 发送消息
   const handleSend = async () => {
     if (!input.trim() || !apiKey.trim() || isLoading) return;
 
@@ -206,43 +105,35 @@ export default function ChatInterface({ className }: ChatInterfaceProps) {
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
-    setCurrentResponse('');
     setDisplayedResponse('');
     isStreamingRef.current = true;
     
-    // 发送消息后立即滚动到底部
-    scrollToBottom(true);
+    requestAnimationFrame(() => scrollToBottom(true));
 
     try {
       const newMessages = [...messages, userMessage];
       let fullResponse = '';
 
-      const handleProgress: OnProgressCallback = (content: string) => {
+      await sendMessage(newMessages, apiKey, (content: string) => {
         fullResponse += content;
-        setCurrentResponse(fullResponse);
-        // 每次收到新内容时滚动
-        scrollToBottom(true);
-      };
-
-      await sendMessage(newMessages, apiKey, handleProgress);
+        handleProgress(content);
+      });
 
       if (isStreamingRef.current) {
-        setTimeout(() => {
+        requestAnimationFrame(() => {
           setMessages(prev => [
             ...prev,
             { role: 'assistant', content: fullResponse }
           ]);
-          setCurrentResponse('');
           setDisplayedResponse('');
           isStreamingRef.current = false;
-          // 消息完成后滚动到底部
           scrollToBottom(true);
-        }, 100);
+        });
       }
 
-      setTimeout(() => {
+      requestAnimationFrame(() => {
         inputRef.current?.focus();
-      }, 100);
+      });
     } catch (error) {
       console.error('Error sending message:', error);
       setMessages(prev => [
@@ -254,18 +145,13 @@ export default function ChatInterface({ className }: ChatInterfaceProps) {
       ]);
       isStreamingRef.current = false;
       setDisplayedResponse('');
-      // 错误信息后也滚动到底
-      scrollToBottom(true);
+      requestAnimationFrame(() => scrollToBottom(true));
     } finally {
       setIsLoading(false);
     }
   };
 
-  /**
-   * 键盘事件处理函数
-   * 处理回车发送消息
-   * @param e - 键盘事件对象
-   */
+  // 键盘事件处理函数
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -273,18 +159,110 @@ export default function ChatInterface({ className }: ChatInterfaceProps) {
     }
   };
 
-  /**
-   * 组件卸载时的清理函数
-   * 清理打字机效果的定时器和流式响应状态
-   */
-  useEffect(() => {
-    return () => {
-      isStreamingRef.current = false;
-      if (typewriterTimeoutRef.current) {
-        clearTimeout(typewriterTimeoutRef.current);
-      }
-    };
-  }, []);
+  // 渲染 AI 回复
+  const renderAIResponse = useCallback(() => {
+    if (!displayedResponse || !isStreamingRef.current) return null;
+
+    // 将文本按换行符分割成数组，保留空行
+    const lines = displayedResponse.split(/(\n)/g).filter(line => line !== '');
+    const lastLineIndex = lines.length - 1;
+
+    return (
+      <Box
+        sx={{
+          py: 2,
+          px: { xs: 2, sm: 4, md: 6 },
+          display: 'flex',
+          justifyContent: 'flex-start',
+          backgroundColor: 'white',
+          gap: 2,
+          alignItems: 'flex-start',
+        }}
+      >
+        <Avatar
+          sx={{
+            bgcolor: '#10a37f',
+            width: 36,
+            height: 36,
+          }}
+        >
+          <SmartToyIcon sx={{ fontSize: 20 }} />
+        </Avatar>
+        <Box
+          sx={{
+            maxWidth: '70%',
+            backgroundColor: '#f7f7f8',
+            borderRadius: 2,
+            px: 3,
+            py: 2,
+            position: 'relative',
+          }}
+        >
+          <Typography
+            component="div"
+            sx={{
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontFamily: 'system-ui',
+              fontSize: '1rem',
+              lineHeight: 1.75,
+              '& p': {
+                margin: '0 0 1em 0',
+              },
+              '& p:last-child': {
+                marginBottom: 0,
+              },
+            }}
+          >
+            {lines.map((line, index) => (
+              <Box 
+                key={index} 
+                sx={{ 
+                  display: 'block', 
+                  minHeight: line === '\n' ? '1em' : '1.75em',
+                  '&:last-child': {
+                    minHeight: 'auto'
+                  },
+                  transform: 'translateZ(0)', // 启用硬件加速
+                  willChange: 'transform', // 提示浏览器优化
+                }}
+              >
+                {index === lastLineIndex ? (
+                  <Typewriter
+                    onInit={(typewriter) => {
+                      typewriter
+                        .changeDelay(30)
+                        .changeDeleteSpeed(Infinity)
+                        .pauseFor(50)
+                        .typeString(line)
+                        .callFunction(() => {
+                          // 使用 RAF 嵌套来优化滚动
+                          requestAnimationFrame(() => {
+                            requestAnimationFrame(() => scrollToBottom(false));
+                          });
+                        })
+                        .start();
+                    }}
+                    options={{
+                      cursor: '|',
+                      autoStart: false,
+                      loop: false,
+                      delay: 30,
+                      skipAddStyles: true,
+                      wrapperClassName: index === lastLineIndex ? 'typewriter-wrapper active' : 'typewriter-wrapper',
+                      cursorClassName: 'Typewriter__cursor',
+                    }}
+                  />
+                ) : (
+                  <span>{line}</span>
+                )}
+              </Box>
+            ))}
+          </Typography>
+        </Box>
+      </Box>
+    );
+  }, [displayedResponse, scrollToBottom]);
 
   return (
     <Box 
@@ -538,79 +516,7 @@ export default function ChatInterface({ className }: ChatInterfaceProps) {
             </Box>
           </Box>
         )}
-        {displayedResponse && isStreamingRef.current && (
-          <Box
-            sx={{
-              py: 2,
-              px: { xs: 2, sm: 4, md: 6 },
-              display: 'flex',
-              justifyContent: 'flex-start',
-              backgroundColor: 'white',
-              gap: 2,
-              alignItems: 'flex-start',
-            }}
-          >
-            <Avatar
-              sx={{
-                bgcolor: '#10a37f',
-                width: 36,
-                height: 36,
-              }}
-            >
-              <SmartToyIcon sx={{ fontSize: 20 }} />
-            </Avatar>
-            <Box
-              sx={{
-                maxWidth: '70%',
-                backgroundColor: '#f7f7f8',
-                borderRadius: 2,
-                px: 3,
-                py: 2,
-                position: 'relative',
-              }}
-            >
-              <Typography
-                component="div"
-                sx={{
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  fontFamily: 'system-ui',
-                  fontSize: '1rem',
-                  lineHeight: 1.75,
-                  '& p': {
-                    margin: '0 0 1em 0',
-                  },
-                  '& p:last-child': {
-                    marginBottom: 0,
-                  },
-                }}
-              >
-                {displayedResponse}
-                <Box
-                  component="span"
-                  sx={{
-                    display: 'inline-block',
-                    width: '1px',
-                    height: '1.2em',
-                    marginLeft: '2px',
-                    backgroundColor: '#10a37f',
-                    verticalAlign: 'middle',
-                    opacity: 0.8,
-                    animation: 'blink 1s step-end infinite',
-                    '@keyframes blink': {
-                      '0%, 100%': {
-                        opacity: 0.8,
-                      },
-                      '50%': {
-                        opacity: 0,
-                      },
-                    },
-                  }}
-                />
-              </Typography>
-            </Box>
-          </Box>
-        )}
+        {renderAIResponse()}
         <div ref={messagesEndRef} />
       </Box>
 
