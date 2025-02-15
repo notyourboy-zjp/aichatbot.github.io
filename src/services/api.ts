@@ -76,17 +76,27 @@ export async function sendMessage(
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
             'HTTP-Referer': window.location.origin,
-            'X-Title': 'AI ChatBot'
+            'X-Title': 'AI-ChatBot',
+            'Accept': 'text/event-stream',
           },
           body: JSON.stringify({
-            model: 'openai/gpt-3.5-turbo',
-            messages: messages.map(msg => ({
-              role: msg.role,
-              content: msg.content
-            })),
+            model: 'mistralai/mistral-7b-instruct',  // 使用 Mistral AI 的模型
+            messages: [
+              {
+                role: 'system',
+                content: '你是一个有帮助的AI助手，请用简洁、专业的中文回答问题。'
+              },
+              ...messages.map(msg => ({
+                role: msg.role,
+                content: msg.content
+              }))
+            ],
             stream: true,
             temperature: 0.7,
-            max_tokens: 2000
+            max_tokens: 2000,
+            top_p: 1,
+            frequency_penalty: 0,
+            presence_penalty: 0,
           }),
         },
         30000 // 30 秒超时
@@ -100,11 +110,31 @@ export async function sendMessage(
           body: errorText
         });
 
+        try {
+          const errorData = JSON.parse(errorText);
+          const providerError = errorData?.error?.metadata?.raw;
+          if (providerError) {
+            const parsedProviderError = JSON.parse(providerError);
+            const errorMessage = parsedProviderError?.error?.message;
+            if (errorMessage) {
+              throw new Error(`服务提供商错误: ${errorMessage}`);
+            }
+          }
+          const errorMessage = errorData?.error?.message;
+          if (errorMessage) {
+            throw new Error(`OpenRouter API 错误: ${errorMessage}`);
+          }
+        } catch (e) {
+          console.warn('解析错误信息失败:', e);
+        }
+
         // 对特定错误码进行处理
         if (response.status === 429) {
           throw new Error('请求过于频繁，请稍后再试');
         } else if (response.status === 401) {
-          throw new Error('API Key 无效或已过期');
+          throw new Error('API Key 无效或已过期，请检查你的 OpenRouter API Key');
+        } else if (response.status === 403) {
+          throw new Error('访问被拒绝，请检查 API Key 权限或尝试使用其他模型');
         } else if (response.status === 503) {
           throw new Error('服务暂时不可用，请稍后再试');
         }
@@ -119,34 +149,64 @@ export async function sendMessage(
         throw new Error('无法读取响应流');
       }
 
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            console.log('响应流读取完成');
+            break;
+          }
 
-        const chunk = decoder.decode(value);
-        buffer += chunk;
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
 
-        // 处理完整的 SSE 消息
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // 保留不完整的最后一行
+          // 处理完整的 SSE 消息
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // 保留不完整的最后一行
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
-
-            try {
-              const parsed = JSON.parse(data);
-              const content = parsed.choices[0]?.delta?.content || '';
-              if (content) {
-                onProgress(content);
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') {
+                console.log('收到结束标记');
+                continue;
               }
-            } catch (e) {
-              console.warn('解析 SSE 消息时出错:', e);
-              continue;
+
+              try {
+                const parsed = JSON.parse(data);
+                if (!parsed || !parsed.choices || !Array.isArray(parsed.choices) || parsed.choices.length === 0) {
+                  console.warn('无效的 SSE 消息格式:', data);
+                  continue;
+                }
+
+                const choice = parsed.choices[0];
+                if (!choice || !choice.delta) {
+                  console.warn('无效的 choice 格式:', choice);
+                  continue;
+                }
+
+                const content = choice.delta.content;
+                if (content !== undefined && content !== null) {
+                  onProgress(content);
+                }
+              } catch (e) {
+                console.warn('解析 SSE 消息时出错:', e, '\n原始数据:', data);
+                continue;
+              }
             }
           }
+        }
+      } catch (error) {
+        console.error('读取响应流时出错:', error);
+        throw error;
+      } finally {
+        try {
+          await reader.cancel();
+          console.log('响应流已关闭');
+        } catch (error) {
+          console.warn('关闭响应流时出错:', error);
         }
       }
 
